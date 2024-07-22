@@ -1,68 +1,40 @@
 package apiserver
 
 import (
-	"io"
+	"database/sql"
 	"net/http"
 
-	"github.com/gorilla/mux"
-	"github.com/sirupsen/logrus"
+	"github.com/gorilla/sessions"
+	"github.com/myacey/http-rest-api/internal/app/store/sqlstore"
 )
 
-// APIServer ...
-type APIServer struct {
-	config *Config
-	logger *logrus.Logger
-	router *mux.Router
-}
-
-// New ...
-func New(config *Config) *APIServer {
-	return &APIServer{
-		config: config,
-		logger: logrus.New(),
-		router: mux.NewRouter(),
-	}
-}
-
 // Start ...
-func (server *APIServer) Start() error {
-	if err := server.configureLogger(); err != nil {
-		return err
-	}
-
-	server.configureRouter()
-
-	server.logger.Info("starting api server")
-
-	return http.ListenAndServe(server.config.BindAddr, server.router)
-}
-
-func (server *APIServer) configureLogger() error {
-	level, err := logrus.ParseLevel(server.config.LogLevel)
+func Start(config *Config) error {
+	db, err := newDB(config.DatabaseURL)
 	if err != nil {
 		return err
 	}
+	defer db.Close()
 
-	server.logger.SetLevel(level)
+	store := sqlstore.New(db)
+	sessionStore := sessions.NewCookieStore([]byte(config.SessionKey))
 
-	return nil
+	srv := newServer(store, sessionStore)
 
+	// srv.logger.Info("start listening")
+
+	return http.ListenAndServe(config.BindAddr, srv)
 }
 
-func (server *APIServer) configureRouter() {
-	server.router.HandleFunc("/hello", server.handleHello())
-	server.router.HandleFunc("/profile", server.handleProfile())
-}
-
-func (server *APIServer) handleHello() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "Hello")
+func newDB(databaseURL string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		return nil, err
 	}
-}
 
-func (server *APIServer) handleProfile() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "it's profile page!\n")
-		io.WriteString(w, "I dont know how to load needer .html, but sometime I'll know!")
+	if err := db.Ping(); err != nil {
+		return nil, err
 	}
+
+	return db, nil
 }
